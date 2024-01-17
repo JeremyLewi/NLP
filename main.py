@@ -3,32 +3,70 @@ import streamlit as st
 import subprocess
 import os
 import glob
+from textblob import TextBlob
+import matplotlib.pyplot as plt
+import cleantext
+from googletrans import Translator
+
+# Fungsi untuk melakukan pembersihan teks
+def clean_text(text):
+    return cleantext.clean(text, clean_all=True, extra_spaces=True, stopwords=True, lowercase=True, numbers=True, punct=True)
+
+# Fungsi untuk menerjemahkan teks ke bahasa Inggris
+def translate_text_to_english(text):
+    try:
+        translated = translator.translate(text, src='id', dest='en')
+        return translated.text
+    except Exception as e:
+        print("Error:", e)
+        return text
+
+# Fungsi untuk menghitung skor polaritas
+def score(text):
+    blob = TextBlob(text)
+    return blob.sentiment.polarity
+
+# Fungsi untuk menghitung sentimen
+def analyze_sentiment(polarity):
+    return 'Positive' if polarity > 0 else ('Negative' if polarity < 0 else 'Neutral')
+
+# Inisialisasi Translator
+translator = Translator()
 
 # Menambahkan judul aplikasi
-st.title('Sentiment Analysis')
+st.title('Sentiment Analysis of Tweets using TextBlob')
+
+# Sidebar Options
+st.sidebar.header("Tweet Crawling Options")
+search_keyword = st.sidebar.text_input("Enter search keyword:", 'Debat Pemilihan Presiden 2024')
+start_date = st.sidebar.date_input("Enter start date:", pd.to_datetime('2023-12-01'))
+end_date = st.sidebar.date_input("Enter end date:", pd.to_datetime('2024-01-13'))
+limit = st.sidebar.number_input("Enter limit:", 5, 1000, 100, 100)
 
 # Tweet Crawling Integration
-if st.button('Crawl Tweets'):
-    search_keyword = 'Debat Pemilihan Presiden 2024 until:2024-01-13 since:2023-12-01'
-    limit = 10
+if st.sidebar.button('Process'):
     token = "ae32da70061dd43aa6371090cdc45d010cad878d"
-
-    # Running the tweet-harvest command
     subprocess.run(['npx', '--yes', 'tweet-harvest@2.2.8', '-s', search_keyword, '-l', str(limit), '--token', token])
 
-    # Assuming the file is saved in a known directory, adjust the path as needed
     file_directory = '/Users/jeremylewi/Downloads/textblob_sentiment_analysis-main 2/tweets-data/'
     files = glob.glob(file_directory + '/*.csv')
 
-    # Check if any new CSV file is created
     if files:
         latest_file = max(files, key=os.path.getctime)
-        # Read the latest file
         crawled_df = pd.read_csv(latest_file, delimiter=";")
-        
-        # Display the result
+
+        crawled_df['cleaned_text'] = crawled_df['full_text'].apply(clean_text)
+        crawled_df['translated_text'] = crawled_df['cleaned_text'].apply(translate_text_to_english)
+        crawled_df['polarity'] = crawled_df['translated_text'].apply(score)
+        crawled_df['sentiment'] = crawled_df['polarity'].apply(analyze_sentiment)
+
         st.write("Crawled Data:")
-        st.dataframe(crawled_df.head(10))  # Adjust the number of rows as needed
-        st.success('Tweet crawling completed!')
+        st.dataframe(crawled_df[['full_text', 'translated_text', 'sentiment', 'polarity']].head(10))
+
+        sentiment_counts = crawled_df['sentiment'].value_counts()
+        fig, ax = plt.subplots()
+        sentiment_counts.plot(ax=ax, kind='bar')
+        st.pyplot(fig)
+        st.success('Tweet crawling and sentiment analysis completed!')
     else:
         st.error('No new tweet data file found.')
