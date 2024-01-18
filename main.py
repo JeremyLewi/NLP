@@ -39,11 +39,19 @@ translator = Translator()
 st.title('Sentiment Analysis of Tweets using TextBlob')
 
 # Sidebar Options
-st.sidebar.header("Tweet Crawling Options")
+st.sidebar.header("Tweet Crawling and Analysis Options")
 search_keyword = st.sidebar.text_input("Enter search keyword:", 'Debat Pemilihan Presiden 2024')
 start_date = st.sidebar.date_input("Enter start date:", pd.to_datetime('2023-12-01'))
 end_date = st.sidebar.date_input("Enter end date:", pd.to_datetime('2024-01-13'))
 limit = st.sidebar.number_input("Enter limit:", 5, 1000, 100, 100)
+
+# File Uploader
+uploaded_file = st.sidebar.file_uploader("Upload a CSV file for analysis:", type=['csv'])
+if uploaded_file is not None:
+    uploaded_df = pd.read_csv(uploaded_file, delimiter=";")
+    st.session_state.uploaded_df = uploaded_df
+    st.write("Uploaded Data:")
+    st.dataframe(uploaded_df[['full_text']])
 
 # Mendapatkan direktori saat ini
 current_directory = os.getcwd()
@@ -59,13 +67,11 @@ if st.sidebar.button('Crawl Data'):
     token = "ae32da70061dd43aa6371090cdc45d010cad878d"
     subprocess.run(['npx', '--yes', 'tweet-harvest@2.2.8', '-s', search_keyword, '-l', str(limit), '--token', token])
 
-    # Mengganti file_directory dengan file_directory yang telah dibuat
     files = glob.glob(file_directory + '/*.csv')
-
     if files:
         latest_file = max(files, key=os.path.getctime)
         crawled_df = pd.read_csv(latest_file, delimiter=";")
-        st.session_state.crawled_df = crawled_df  # Menyimpan DataFrame dalam state sesi
+        st.session_state.crawled_df = crawled_df
         st.write("Crawled Data:")
         st.dataframe(crawled_df[['full_text']])
         st.success('Tweet crawling completed!')
@@ -74,20 +80,24 @@ if st.sidebar.button('Crawl Data'):
 
 # Tombol untuk Analisis Sentimen
 if st.sidebar.button('Sentiment Analysis'):
+    data_df = None
     if 'crawled_df' in st.session_state:
-        crawled_df = st.session_state.crawled_df  # Mengambil DataFrame dari state sesi
-        crawled_df['cleaned_text'] = crawled_df['full_text'].apply(clean_text)
-        crawled_df['translated_text'] = crawled_df['cleaned_text'].apply(translate_text_to_english)
-        crawled_df['polarity'] = crawled_df['translated_text'].apply(score)
-        crawled_df['sentiment'] = crawled_df['polarity'].apply(analyze_sentiment)
+        data_df = st.session_state.crawled_df
+    elif 'uploaded_df' in st.session_state:
+        data_df = st.session_state.uploaded_df
 
-        st.write("Crawled Data with Sentiment Analysis:")
-        st.dataframe(crawled_df[['full_text', 'translated_text', 'sentiment', 'polarity']])
-        sentiment_counts = crawled_df['sentiment'].value_counts()
+    if data_df is not None:
+        data_df['cleaned_text'] = data_df['full_text'].apply(clean_text)
+        data_df['translated_text'] = data_df['cleaned_text'].apply(translate_text_to_english)
+        data_df['polarity'] = data_df['translated_text'].apply(score)
+        data_df['sentiment'] = data_df['polarity'].apply(analyze_sentiment)
+
+        st.write("Data with Sentiment Analysis:")
+        st.dataframe(data_df[['full_text', 'translated_text', 'sentiment', 'polarity']])
+        sentiment_counts = data_df['sentiment'].value_counts()
         fig, ax = plt.subplots()
         sentiment_counts.plot(ax=ax, kind='bar')
         st.pyplot(fig)
         st.success('Sentiment analysis completed!')
     else:
-        st.warning('Please crawl data first.')
-
+        st.warning('Please crawl or upload data first.')
